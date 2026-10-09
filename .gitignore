@@ -1,0 +1,9 @@
+# Python-environment
+.venv/
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# Mac files
+.DS_Store

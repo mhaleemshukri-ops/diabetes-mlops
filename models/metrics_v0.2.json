@@ -1,0 +1,6 @@
+{
+    "version": "v0.2",
+    "model": "Ridge",
+    "alpha": 10,
+    "rmse": 53.6263
+}
