@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import time
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -19,6 +20,18 @@ def request(base_url, path, payload=None):
         return error.code, json.load(error)
 
 
+def wait_for_health(base_url, attempts=30):
+    for attempt in range(attempts):
+        try:
+            return request(base_url, "/health")
+        except (URLError, OSError, HTTPException):
+            # Docker can accept connections before the server is ready, then
+            # reset or close them without returning an HTTP response.
+            if attempt == attempts - 1:
+                raise
+            time.sleep(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:80")
@@ -26,14 +39,7 @@ def main():
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
 
-    for attempt in range(30):
-        try:
-            status, health = request(base_url, "/health")
-            break
-        except (URLError, TimeoutError):
-            if attempt == 29:
-                raise
-            time.sleep(1)
+    status, health = wait_for_health(base_url)
     assert status == 200, (status, health)
     assert health == {"status": "ok", "model_version": args.expected_version}, health
 
