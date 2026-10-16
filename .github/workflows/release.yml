@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate supported model version
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          case "$RELEASE_VERSION" in
+            v0.1|v0.2) ;;
+            *) echo "Unsupported model version: $RELEASE_VERSION" >&2; exit 1 ;;
+          esac
+
+  checks:
+    needs: validate-version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    env:
+      RELEASE_VERSION: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Download models and metrics from verified training
+        uses: actions/download-artifact@v4
+        with:
+          name: training-artifacts
+      - name: Set image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:$RELEASE_VERSION" >> "$GITHUB_ENV"
+      - name: Build versioned image
+        run: |
+          docker build --build-arg "MODEL_VERSION=$RELEASE_VERSION" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$IMAGE" .
+      - name: Start container with baked-in version
+        run: docker run --detach --name diabetes-smoke --publish 127.0.0.1:8080:80 "$IMAGE"
+      - name: Container smoke tests
+        run: python scripts/smoke_test.py --base-url http://127.0.0.1:8080 --expected-version "$RELEASE_VERSION"
+      - name: Container logs
+        if: always()
+        run: docker logs diabetes-smoke || true
+      - name: Stop smoke container
+        if: always()
+        run: docker rm --force diabetes-smoke || true
+      - name: Log in to GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+      - name: Push tested image
+        run: docker push "$IMAGE"
+      - name: Prepare release notes
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+          metrics = Path(f"models/metrics_{version}.json").read_text()
+          json.loads(metrics)
+          notes = (
+              f"## Container image\n\n`{os.environ['IMAGE']}`\n\n"
+              f"## Metrics\n\n```json\n{metrics}\n```\n\n"
+              + Path("CHANGELOG.md").read_text()
+          )
+          Path("release-notes.md").write_text(notes)
+          PY
+      - name: Publish GitHub Release with metrics and changelog
+        run: |
+          gh release create "$RELEASE_VERSION" \
+            "models/metrics_${RELEASE_VERSION}.json" CHANGELOG.md \
+            --verify-tag --title "$RELEASE_VERSION" --notes-file release-notes.md
