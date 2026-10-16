@@ -26,8 +26,6 @@ print(X.head())
 print("\nTarget values:")
 print(y.head())
 
-from sklearn.model_selection import train_test_split
-
 # Split the dataset into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(
     X,
@@ -39,10 +37,6 @@ X_train, X_test, y_train, y_test = train_test_split(
 # Check the number of observations in each set
 print("\nTraining observations:", X_train.shape[0])
 print("Testing observations:", X_test.shape[0])
-
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
 
 # Create ML pipeline (v0.1)
 model = Pipeline([
@@ -56,8 +50,6 @@ model.fit(X_train, y_train)
 print("\nBaseline model (v0.1) trained successfully!")
 print(model)
 
-from sklearn.metrics import root_mean_squared_error
-
 # Predict progression for the test observationz
 y_pred = model.predict(X_test)
 
@@ -67,10 +59,6 @@ rmse = root_mean_squared_error(y_test, y_pred)
 # show the evaluation result
 print("\nBaseline Model Evaluation (v0.1)")
 print(f"Test RMSE: {rmse:.4f}")
-
-import joblib
-import json
-import os
 
 # Create folder for the model and the results
 os.makedirs("models", exist_ok=True)
@@ -85,8 +73,6 @@ with open("models/metrics_v0.1.json", "w") as f:
     json.dump(metrics, f, indent=4)
 
 print("\nModel and metrics saved!")
-
-from sklearn.linear_model import Ridge
 
 # Try Ridge Regression for the other version v0.2
 ridge_model = Pipeline([
